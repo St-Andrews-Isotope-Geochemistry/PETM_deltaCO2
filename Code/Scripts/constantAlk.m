@@ -1,5 +1,5 @@
 clear
-
+close all
 %%
 data_directory = "./../../Data/";
 number_of_samples = 1000; % Number of statistical samples
@@ -10,14 +10,20 @@ d11B_sw_data = importd11BswData(data_directory+"/Rae_2021_Boron_Data.xlsx","d11B
 
 temperature = readtable(data_directory+"/temperature.csv");
 salinity = readtable(data_directory+"/salinity.csv");
+gmst = readtable(data_directory+"/gmst.csv");
 
-% Get Anagnostou d11Bsw
-d11B_sw = d11B_sw_data(d11B_sw_data.age==53.2,:).d11Bsw;
-d11B_sw_uncertainty = 0.1; % Assume uncertainty
+% Use Anagnostou d11Bsw
+% d11B_sw = d11B_sw_data(d11B_sw_data.age==53.2,:).d11Bsw;
+d11B_sw = 38.5;
+% sensitivity tests...
+%d11B_sw = 38;
+d11B_sw_uncertainty = 0.2; % Assume uncertainty
 
 %% Specifying data
-calcium = 0.017566; % From JessT
-magnesium = 2.2*calcium; % From JessT
+%get Mg from Zeebe 2019 for 56 Ma
+yT = 56;
+magnesium = (52.82-35).*exp(-(yT-0)./12) + 35;
+calcium = magnesium./2.2; %use 2.2 to match BayMAG setting
 
 saturation_state = [5,8]; % From JRae
 
@@ -29,7 +35,7 @@ saturation_state_sampler = Geochemistry_Helpers.Sampler(1:0.01:15,"Flat",saturat
 saturation_state_sampler.getSamples(number_of_samples).shuffle();
 
 % Age to Ma
-d11B_data.age = d11B_data.age/1000;
+d11B_data.age = d11B_data.age./1000;
 
 % Filter data to PETM relevant by age
 petm_data = d11B_data(d11B_data.age<=56.5 & d11B_data.age>=55.55 & ~d11B_data.exclude,:);
@@ -61,10 +67,10 @@ core_1209.PETM.data_distribution = Geochemistry_Helpers.Sampler.fromSamples(10:0
 
 %% Temperature
 % Create distributions
-core_401.prePETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:40,temperature.DSDP401PrePETM).normalise();
-core_401.PETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:40,temperature.DSDP401PETM).normalise();
-core_1209.prePETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:40,temperature.ODP1209PrePETM).normalise();
-core_1209.PETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:40,temperature.ODP1209PETM).normalise();
+core_401.prePETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:42,temperature.DSDP401PrePETM).normalise();
+core_401.PETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:42,temperature.DSDP401PETM).normalise();
+core_1209.prePETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:42,temperature.ODP1209PrePETM).normalise();
+core_1209.PETM.temperature_distribution = Geochemistry_Helpers.Distribution.fromSamples(10:0.1:42,temperature.ODP1209PETM).normalise();
 
 % Create samplers
 core_401.prePETM.temperature_sampler = Geochemistry_Helpers.Sampler(core_401.prePETM.temperature_distribution,'latin_hypercube');
@@ -106,7 +112,7 @@ myami = MyAMI.MyAMI("Precalculated",true);
 core_401.prePETM.d11bco2 = BuCC.d11BCO2().create(number_of_samples); % Create a number of d11B-CO2 objects
 core_401.prePETM.d11bco2.species_calibration.d11B_measured.assignToEach("value",core_401.prePETM.data_distribution.samples); % Default species calibration of borate
 
-core_401.prePETM.d11bco2.boron.assignToAll("epsilon",27.2); % Use Klochko?
+core_401.prePETM.d11bco2.boron.assignToAll("epsilon",27.2); % Use Klochko? 27.2
 core_401.prePETM.d11bco2.boron.d11B_sw.assignToEach("value",d11B_sw_sampler.samples);
 
 core_401.prePETM.d11bco2.carbonate_chemistry.assignToAll("units"," mol/kg"); % Specify units as saturation state is unitless
@@ -145,14 +151,20 @@ core_401.PETM.d11bco2.calculate();
 
 % Output
 core_401.deltaCO2 = (core_401.PETM.d11bco2.carbonate_chemistry.atmospheric_co2.x - core_401.prePETM.d11bco2.carbonate_chemistry.atmospheric_co2.x)*1e6;
-core_401.deltaCO2_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:10:5000,core_401.deltaCO2);
+%remove complex numbers
+idx = core_401.deltaCO2 == real(core_401.deltaCO2);
+core_401.deltaCO2_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:10:8000,core_401.deltaCO2(idx));
 
 core_401.deltaCO2_doublings = log2(core_401.PETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6) - log2(core_401.prePETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6);
-core_401.deltaCO2_doublings_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:0.01:2,core_401.deltaCO2_doublings);
+%remove complex numbers
+idx = core_401.deltaCO2_doublings == real(core_401.deltaCO2_doublings);
+core_401.deltaCO2_doublings_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:0.01:2,core_401.deltaCO2_doublings(idx));
 
 %% Shuffle samples
+%shuffle saturation state b/c each site should have a different value
 saturation_state_sampler.shuffle();
-d11B_sw_sampler.shuffle();
+%no need to shuffle d11B as this should be the same at each site
+%d11B_sw_sampler.shuffle();
 
 %% 1209
 % prePETM
@@ -200,14 +212,76 @@ core_1209.PETM.d11bco2.calculate();
 
 % Output
 core_1209.deltaCO2 = (core_1209.PETM.d11bco2.carbonate_chemistry.atmospheric_co2.x - core_1209.prePETM.d11bco2.carbonate_chemistry.atmospheric_co2.x)*1e6;
-core_1209.deltaCO2_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:10:5000,core_1209.deltaCO2);
+% remove complex numbers
+idx = core_1209.deltaCO2 == real(core_1209.deltaCO2);
+core_1209.deltaCO2_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:10:8000,core_1209.deltaCO2(idx));
 
 core_1209.deltaCO2_doublings = log2(core_1209.PETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6) - log2(core_1209.prePETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6);
-core_1209.deltaCO2_doublings_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:0.01:2,core_1209.deltaCO2_doublings);
+% remove complex numbers
+idx = core_1209.deltaCO2_doublings == real(core_1209.deltaCO2_doublings);
+core_1209.deltaCO2_doublings_distribution = Geochemistry_Helpers.Distribution.fromSamples(0:0.01:2,core_1209.deltaCO2_doublings(idx));
 
 %% Assume doublings is what is consistent with both sites
-combined_doublings = Geochemistry_Helpers.Distribution(0:0.01:2,"Manual",core_401.deltaCO2_doublings_distribution.probabilities.*core_1209.deltaCO2_doublings_distribution.probabilities).normalise();
+combined_doublings.distribution = Geochemistry_Helpers.Distribution(0:0.01:2,"Manual",core_401.deltaCO2_doublings_distribution.probabilities.*core_1209.deltaCO2_doublings_distribution.probabilities).normalise();
+combined_doublings.sampler = Geochemistry_Helpers.Sampler(combined_doublings.distribution,'latin_hypercube');
+combined_doublings.sampler.getSamples(number_of_samples).shuffle();
 
+%but also save deltaCO2
+core1209.deltaCO2 = core_1209.deltaCO2;
+core401.deltaCO2 = core_401.deltaCO2;
+%combined estimate
+combined_delCO2.distribution = Geochemistry_Helpers.Distribution(0:10:8000,"Manual",core_401.deltaCO2_distribution.probabilities.*core_1209.deltaCO2_distribution.probabilities).normalise();
+combined_delCO2.sampler = Geochemistry_Helpers.Sampler(combined_delCO2.distribution,'latin_hypercube');
+combined_delCO2.sampler.getSamples(number_of_samples).shuffle();
+
+%Create GMST distribution + samples
+globalT.distribution = Geochemistry_Helpers.Distribution.fromSamples(0:0.01:10,gmst.GMSTPETM - gmst.GMSTprePETM).normalise();
+globalT.sampler = Geochemistry_Helpers.Sampler(globalT.distribution,'latin_hypercube');
+globalT.sampler.getSamples(number_of_samples).shuffle();
+
+%Calculate CS
+ClimateSens.values = globalT.sampler.samples ./ combined_doublings.sampler.samples;
+ClimateSens.distribution = Geochemistry_Helpers.Distribution.fromSamples(3:.05:14,ClimateSens.values);
+
+%save CO2, Alk, Saturation State, pH
+core1209.PETMCO2 = core_1209.PETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6;
+core1209.prePETMCO2 = core_1209.prePETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6;
+core401.PETMCO2 = core_401.PETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6;
+core401.prePETMCO2 = core_401.prePETM.d11bco2.carbonate_chemistry.atmospheric_co2.x*1e6;
+%alk
+core1209.PETMAlk = core_1209.PETM.d11bco2.carbonate_chemistry.alkalinity.*1000000;
+core1209.prePETMAlk = core_1209.prePETM.d11bco2.carbonate_chemistry.alkalinity.*1000000;
+core401.PETMAlk = core_401.PETM.d11bco2.carbonate_chemistry.alkalinity.*1000000;
+core401.prePETMAlk  = core_401.prePETM.d11bco2.carbonate_chemistry.alkalinity.*1000000;
+%sat
+core1209.PETMO = core_1209.PETM.d11bco2.carbonate_chemistry.saturation_state;
+core1209.prePETMO = core_1209.prePETM.d11bco2.carbonate_chemistry.saturation_state;
+core401.PETMO = core_401.PETM.d11bco2.carbonate_chemistry.saturation_state;
+core401.prePETMO = core_401.prePETM.d11bco2.carbonate_chemistry.saturation_state;
+%pH
+core1209.PETMP = core_1209.PETM.d11bco2.carbonate_chemistry.pH.pValue;
+core1209.prePETMP = core_1209.prePETM.d11bco2.carbonate_chemistry.pH.pValue;
+core401.PETMP = core_401.PETM.d11bco2.carbonate_chemistry.pH.pValue;
+core401.prePETMP = core_401.prePETM.d11bco2.carbonate_chemistry.pH.pValue;
+%get combined distribution for CO2 values
+idx = core1209.PETMCO2 == real(core1209.PETMCO2);
+core_1209.CO2_distP = Geochemistry_Helpers.Distribution.fromSamples(0:50:10000,core1209.PETMCO2(idx));
+core_1209.CO2_distPre = Geochemistry_Helpers.Distribution.fromSamples(0:50:10000,core1209.prePETMCO2(idx));
+idx = core401.PETMCO2 == real(core401.PETMCO2);
+core_401.CO2_distP = Geochemistry_Helpers.Distribution.fromSamples(0:50:10000,core401.PETMCO2(idx));
+core_401.CO2_distPre = Geochemistry_Helpers.Distribution.fromSamples(0:50:10000,core401.prePETMCO2(idx));
+%PETM CO2
+globalCP.distribution = Geochemistry_Helpers.Distribution(0:50:10000,"Manual",core_1209.CO2_distP.probabilities.*core_401.CO2_distP.probabilities).normalise();
+globalCP.sampler = Geochemistry_Helpers.Sampler(globalCP.distribution,'latin_hypercube');
+globalCP.sampler.getSamples(number_of_samples).shuffle();
+%prePETM CO2
+globalCPre.distribution = Geochemistry_Helpers.Distribution(0:50:10000,...
+    "Manual",core_1209.CO2_distPre.probabilities.*core_401.CO2_distPre.probabilities).normalise();
+globalCPre.sampler = Geochemistry_Helpers.Sampler(globalCPre.distribution,'latin_hypercube');
+globalCPre.sampler.getSamples(number_of_samples).shuffle();
+%save combined CO2 estimates
+PETMCO2 = globalCP.sampler.samples;
+prePETMCO2 = globalCPre.sampler.samples;
 %% Make a figure
 base_colour = Geochemistry_Helpers.Colour.Colour("Goldenrod","ryb",0);
 colourmap = base_colour.makePalette("triad");
@@ -217,10 +291,14 @@ clf
 hold on
 plot_handles(1) = core_401.deltaCO2_doublings_distribution.plot('Color',colourmap.colours(1).rgb,'LineWidth',1.2);
 plot_handles(2) = core_1209.deltaCO2_doublings_distribution.plot('Color',colourmap.colours(2).rgb,'LineWidth',1.2);
-plot_handles(3) = combined_doublings.plot('Color',colourmap.colours(3).rgb,'LineWidth',1.5);
+plot_handles(3) = combined_doublings.distribution.plot('Color',colourmap.colours(3).rgb,'LineWidth',1.5);
 
 xlabel("CO_2 doublings");
 ylabel("Probability");
 
 legend_handle = legend(["401","1209","Combined"],'Box','Off');
 
+figure(2); clf;
+plot(ClimateSens.distribution.bin_midpoints,ClimateSens.distribution.probabilities,'color','k','linewidth',1);
+
+save('petmCSMain.mat','combined_doublings','globalT','ClimateSens','core1209','core401','PETMCO2','prePETMCO2','combined_delCO2');
