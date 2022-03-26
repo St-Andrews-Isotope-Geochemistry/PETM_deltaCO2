@@ -2,7 +2,7 @@ clear
 close all
 %%
 data_directory = "./../../Data/";
-number_of_samples = 1000; % Number of statistical samples
+number_of_samples = 5000; % Number of statistical samples
 
 %% Loading data
 d11B_data = importd11BData(data_directory+"/Rae_2021_Boron_Data.xlsx","d11Bdata_byStudy");
@@ -14,9 +14,6 @@ gmst = readtable(data_directory+"/gmst.csv");
 
 % Use Anagnostou d11Bsw
 d11B_sw = 38.5;
-
-% Sensitivity tests...
-%d11B_sw = 38;
 
 d11B_sw_uncertainty = 0.2; % Assume uncertainty
 
@@ -302,7 +299,7 @@ output.globalT = global_deltaTemperature;
 output.ClimateSens = climate_sensitivity;
 output.combined_delCO2 = combined_deltaCO2;
 
-save('petmCSMain.mat','-struct','output');
+save('petmCSAlk.mat','-struct','output');
 
 %% Make figures
 base_colour = Geochemistry_Helpers.Colour.Colour("Goldenrod","ryb",0);
